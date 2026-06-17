@@ -1,12 +1,14 @@
 {
     "id": "illogicalDMS",
     "name": "Illogical DMS",
-    "description": "Brings illogical-impulse desktop features to DankMaterialShell",
-    "version": "0.1.0",
+    "description": "Brings illogical-impulse desktop features to DankMaterialShell — scroll bar edges for brightness and volume control",
+    "version": "0.2.0",
     "author": "xizha",
-    "type": "widget",
-    "capabilities": ["dankbar-widget"],
+    "type": "desktop",
+    "capabilities": ["desktop-widget"],
     "component": "./IllogicalDMS.qml",
     "icon": "dashboard",
-    "requires_dms": ">=0.1.0"
+    "settings": "./IllogicalDMSSettings.qml",
+    "requires_dms": ">=0.1.0",
+    "permissions": ["settings_read", "settings_write"]
 }
