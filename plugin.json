@@ -1,0 +1,12 @@
+{
+    "id": "illogicalDMS",
+    "name": "Illogical DMS",
+    "description": "Brings illogical-impulse desktop features to DankMaterialShell",
+    "version": "0.1.0",
+    "author": "xizha",
+    "type": "widget",
+    "capabilities": ["dankbar-widget"],
+    "component": "./IllogicalDMS.qml",
+    "icon": "dashboard",
+    "requires_dms": ">=0.1.0"
+}
