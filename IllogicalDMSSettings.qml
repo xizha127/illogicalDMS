@@ -124,11 +124,4 @@ PluginSettings {
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
     }
-
-    StringSetting {
-        settingKey: "deviceMap"
-        label: "Device Map"
-        description: "Screen→device pairs. Format: eDP-1=backlight:nvidia_0;DP-2=ddc:i2c-2"
-        defaultValue: "eDP-1=backlight:nvidia_0"
-    }
 }

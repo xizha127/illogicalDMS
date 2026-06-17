@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 import qs.Common
 import qs.Widgets
 import qs.Modules.Plugins
@@ -25,26 +26,70 @@ DesktopPluginComponent {
     widgetWidth: 800
     widgetHeight: 48
 
-    // ── Screen → brightness device mapping ─────────────────────────
-    // Built from user settings. Format: "eDP-1=backlight:nvidia_0;DP-2=ddc:i2c-2"
-    readonly property string deviceMapRaw: pluginData.deviceMap || "eDP-1=backlight:nvidia_0"
+    // ── Auto-detect screen → brightness device mapping ───────────────
+    property var screenDevices: ({})
+    property bool devicesReady: false
 
-    function getDeviceForScreen(screenName: string): string {
-        const pairs = deviceMapRaw.split(";")
-        for (let i = 0; i < pairs.length; i++) {
-            const eq = pairs[i].indexOf("=")
-            if (eq > 0 && pairs[i].substring(0, eq).trim() === screenName)
-                return pairs[i].substring(eq + 1).trim()
-        }
-        return "backlight:nvidia_0"  // fallback
+    function detectDevices(): void {
+        if (devicesReady) return
+        const screens = Quickshell.screens || []
+        if (screens.length === 0) return
+
+        // Run "dms ipc brightness list" to get available devices
+        const proc = detectProc
+        proc.command = ["sh", "-c",
+            "dms ipc brightness list 2>/dev/null | grep -E '^(backlight|ddc):' | head -20"]
+        proc.running = true
     }
 
+    Process {
+        id: detectProc
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = text.trim().split("\n").filter(l => l.length > 0)
+                const devices = []
+                for (let i = 0; i < lines.length; i++) {
+                    const m = lines[i].match(/^(\S+)/)
+                    if (m) devices.push(m[1])
+                }
+
+                const screens = Quickshell.screens || []
+                const map = {}
+
+                // Built-in display (usually first screen) → first backlight device
+                const backlights = devices.filter(d => d.startsWith("backlight:"))
+                const ddcs = devices.filter(d => d.startsWith("ddc:"))
+
+                // Laptop: built-in screen gets backlight, externals get DDC
+                // Desktop: all screens get DDC
+                for (let i = 0; i < screens.length; i++) {
+                    const name = screens[i].name || ""
+                    if (backlights.length > 0 && i === 0) {
+                        map[name] = backlights[0]
+                    } else if (ddcs.length > 0) {
+                        const ddcIdx = Math.min(i - (backlights.length > 0 ? 1 : 0), ddcs.length - 1)
+                        map[name] = ddcs[Math.max(0, ddcIdx)]
+                    }
+                }
+
+                screenDevices = map
+                devicesReady = true
+            }
+        }
+    }
+
+    Component.onCompleted: detectDevices()
+
     function getFocusedDevice(): string {
+        if (!devicesReady) detectDevices()
         try {
             const name = Hyprland.focusedMonitor?.name || ""
-            if (name) return getDeviceForScreen(name)
+            if (name && screenDevices[name]) return screenDevices[name]
         } catch (e) {}
-        return "backlight:nvidia_0"
+        // Fallback: use first known device
+        const vals = Object.values(screenDevices)
+        return vals.length > 0 ? vals[0] : ""
     }
 
     // ── IPC helper ─────────────────────────────────────────────────
@@ -59,6 +104,7 @@ DesktopPluginComponent {
         if (!scrollEnabled || event.angleDelta.y === 0)
             return
         const device = getFocusedDevice()
+        if (!device) return
         const action = event.angleDelta.y > 0 ? "increment" : "decrement"
         runIpc("brightness", action, [safeSensitivity, device])
         event.accepted = true
