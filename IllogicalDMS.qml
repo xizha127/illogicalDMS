@@ -30,9 +30,16 @@ PluginComponent {
     // ── Device detection ─────────────────────────────────────────────
     property var screenDevices: ({})
     property bool devicesReady: false
+    property int deviceRetries: 0
 
     function detectDevices(): void {
         if (devicesReady) return
+        if (deviceRetries >= 15) {
+            // Give up — use direct brightnessctl as fallback
+            devicesReady = true
+            return
+        }
+        deviceRetries++
         detectProc.command = ["sh", "-c",
             "dms ipc brightness list 2>/dev/null | grep -E '^(backlight|ddc):' | head -20"]
         detectProc.running = true
@@ -44,6 +51,11 @@ PluginComponent {
         stdout: StdioCollector {
             onStreamFinished: {
                 const lines = text.trim().split("\n").filter(l => l.length > 0)
+                if (lines.length === 0) {
+                    // DMS IPC not ready — retry
+                    deviceRetryTimer.start()
+                    return
+                }
                 const devices = []
                 for (let i = 0; i < lines.length; i++) {
                     const m = lines[i].match(/^(\S+)/)
@@ -65,6 +77,16 @@ PluginComponent {
                 devicesReady = true
             }
         }
+        onExited: (exitCode) => {
+            if (exitCode !== 0 && !devicesReady) deviceRetryTimer.start()
+        }
+    }
+
+    Timer {
+        id: deviceRetryTimer
+        interval: 2000
+        repeat: false
+        onTriggered: detectDevices()
     }
 
     function getFocusedDevice(): string {
@@ -192,8 +214,14 @@ PluginComponent {
                         const delta = event.angleDelta.y
                         if (zoneRect === leftZone) {
                             const device = getFocusedDevice()
-                            if (!device) return
-                            runIpc("brightness", delta > 0 ? "increment" : "decrement", [safeSensitivity, device])
+                            if (device) {
+                                runIpc("brightness", delta > 0 ? "increment" : "decrement", [safeSensitivity, device])
+                            } else {
+                                // Fallback: direct brightnessctl when DMS IPC not ready
+                                const step = safeSensitivity
+                                const op = delta > 0 ? "+" : "-"
+                                Quickshell.execDetached(["brightnessctl", "set", op + step + "%", "--quiet"])
+                            }
                         } else {
                             runIpc("audio", delta > 0 ? "increment" : "decrement", [safeSensitivity])
                         }
