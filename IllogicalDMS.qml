@@ -16,16 +16,17 @@ PluginComponent {
     readonly property bool showUi: pluginData.showZoneUi ?? true
     readonly property bool autoAlign: pluginData.autoAlign ?? true
     readonly property int sensitivity: pluginData.scrollSensitivity ?? 5
-    readonly property int zoneWidth: pluginData.leftZoneWidth ?? 200
-    readonly property int zoneHeight: pluginData.zoneHeight || 0   // 0 = auto from bar
+    readonly property int zoneWidthPercent: Math.min(50, pluginData.zoneWidthPercent ?? 20)
+    readonly property int zoneHeight: pluginData.zoneHeight || 0
     readonly property int safeSensitivity: Math.max(1, Math.min(50, sensitivity))
-
-    // ── Bar dimensions (injected by DMS) ─────────────────────────────
     readonly property int barH: barThickness || 48
-
-    // ── Computed zone dimensions ─────────────────────────────────────
     readonly property int effectiveZoneHeight: autoAlign ? barH : (zoneHeight > 0 ? zoneHeight : barH)
-    readonly property int effectiveZoneWidth: zoneWidth
+
+    // Dynamic zone width: percentage of bar window width, capped at 50%
+    readonly property int effectiveZoneWidth: {
+        if (!blurBarWindow || blurBarWindow.width <= 0) return 200
+        return Math.floor(blurBarWindow.width * zoneWidthPercent / 100)
+    }
 
     // ── Device detection ─────────────────────────────────────────────
     property var screenDevices: ({})
@@ -172,7 +173,7 @@ PluginComponent {
     Component.onDestruction: destroyZones()
 
     // React to settings changes
-    onZoneWidthChanged: applyZoneDimensions()
+    onZoneWidthPercentChanged: applyZoneDimensions()
     onZoneHeightChanged: applyZoneDimensions()
     onAutoAlignChanged: applyZoneDimensions()
     onBarHChanged: { if (autoAlign) applyZoneDimensions() }

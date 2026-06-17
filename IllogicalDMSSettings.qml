@@ -87,13 +87,13 @@ PluginSettings {
     }
 
     SliderSetting {
-        settingKey: "leftZoneWidth"
+        settingKey: "zoneWidthPercent"
         label: "Zone Width"
-        description: "Width of each scroll zone from the bar edge."
-        defaultValue: 200
-        minimum: 40
-        maximum: 600
-        unit: "px"
+        description: "Width of each scroll zone as percentage of bar width. Capped at 50% per side."
+        defaultValue: 20
+        minimum: 5
+        maximum: 50
+        unit: "%"
     }
 
     StyledRect { width: parent.width; height: 1; color: Theme.outlineVariant }
