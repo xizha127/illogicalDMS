@@ -108,6 +108,7 @@ PluginComponent {
 
     // ── Gamma control (below 0% brightness) ──────────────────────────
     property int currentGamma: 100
+    property bool brightnessAtMin: false
 
     function doGamma(delta: int): void {
         currentGamma = Math.max(0, Math.min(100, currentGamma + delta))
@@ -121,8 +122,17 @@ PluginComponent {
             doGamma(gStep)
             return
         }
+        if (delta > 0 && brightnessAtMin) {
+            // Was at minimum, brightness increasing — clear min flag
+            brightnessAtMin = false
+        }
         if (delta < 0 && currentGamma < 100) {
             // Already in gamma range — decrease gamma further
+            doGamma(-safeSensitivity)
+            return
+        }
+        if (delta < 0 && brightnessAtMin) {
+            // Brightness already at minimum — enter gamma range
             doGamma(-safeSensitivity)
             return
         }
@@ -133,6 +143,25 @@ PluginComponent {
         } else {
             const op = delta > 0 ? "+" : "-"
             Quickshell.execDetached(["brightnessctl", "set", op + safeSensitivity + "%", "--quiet"])
+        }
+        // After decrease, check if we hit minimum
+        if (delta < 0) checkBrightnessMin()
+    }
+
+    function checkBrightnessMin(): void {
+        brightnessCheckProc.command = ["sh", "-c",
+            "b=$(brightnessctl g 2>/dev/null); m=$(brightnessctl m 2>/dev/null); [ -n \"$b\" ] && [ -n \"$m\" ] && [ \"$m\" -gt 0 ] && echo $((b * 100 / m)) || echo 100"]
+        brightnessCheckProc.running = true
+    }
+
+    Process {
+        id: brightnessCheckProc
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const pct = parseInt(text.trim()) || 100
+                brightnessAtMin = pct <= 1
+            }
         }
     }
 
