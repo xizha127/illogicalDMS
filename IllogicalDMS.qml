@@ -106,6 +106,36 @@ PluginComponent {
         Quickshell.execDetached(cmd)
     }
 
+    // ── Gamma control (below 0% brightness) ──────────────────────────
+    property int currentGamma: 100
+
+    function doGamma(delta: int): void {
+        currentGamma = Math.max(0, Math.min(100, currentGamma + delta))
+        Quickshell.execDetached(["hyprsunset", "-g", String(currentGamma)])
+    }
+
+    function doBrightness(delta: int): void {
+        if (delta > 0 && currentGamma < 100) {
+            // Gamma is below 100 — increase gamma toward 100 first
+            const gStep = Math.min(safeSensitivity, 100 - currentGamma)
+            doGamma(gStep)
+            return
+        }
+        if (delta < 0 && currentGamma < 100) {
+            // Already in gamma range — decrease gamma further
+            doGamma(-safeSensitivity)
+            return
+        }
+        // Normal brightness control (gamma at 100)
+        const device = getFocusedDevice()
+        if (device) {
+            runIpc("brightness", delta > 0 ? "increment" : "decrement", [safeSensitivity, device])
+        } else {
+            const op = delta > 0 ? "+" : "-"
+            Quickshell.execDetached(["brightnessctl", "set", op + safeSensitivity + "%", "--quiet"])
+        }
+    }
+
     // ── Scroll zone overlays on the bar window ───────────────────────
     property var leftZone: null
     property var rightZone: null
@@ -214,15 +244,7 @@ PluginComponent {
                         if (!scrollEnabled || event.angleDelta.y === 0) return
                         const delta = event.angleDelta.y
                         if (zoneRect === leftZone) {
-                            const device = getFocusedDevice()
-                            if (device) {
-                                runIpc("brightness", delta > 0 ? "increment" : "decrement", [safeSensitivity, device])
-                            } else {
-                                // Fallback: direct brightnessctl when DMS IPC not ready
-                                const step = safeSensitivity
-                                const op = delta > 0 ? "+" : "-"
-                                Quickshell.execDetached(["brightnessctl", "set", op + step + "%", "--quiet"])
-                            }
+                            doBrightness(delta)
                         } else {
                             runIpc("audio", delta > 0 ? "increment" : "decrement", [safeSensitivity])
                         }
