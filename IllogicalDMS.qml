@@ -92,7 +92,7 @@ PluginComponent {
             "anchors.top": parent.top,
             "anchors.bottom": parent.bottom,
             "z": 999,
-            "color": showUi ? Qt.rgba(1, 0.84, 0, 0.06) : "transparent"
+            "zoneColor": showUi ? Qt.rgba(1, 0.84, 0, 0.06) : "transparent"
         })
         leftZone = lz
 
@@ -102,7 +102,7 @@ PluginComponent {
             "anchors.top": parent.top,
             "anchors.bottom": parent.bottom,
             "z": 999,
-            "color": showUi ? Qt.rgba(0.31, 0.76, 0.97, 0.06) : "transparent"
+            "zoneColor": showUi ? Qt.rgba(0.31, 0.76, 0.97, 0.06) : "transparent"
         })
         rightZone = rz
 
@@ -128,16 +128,17 @@ PluginComponent {
 
     onZoneWidthChanged: updateZoneWidths()
     onShowUiChanged: {
-        if (leftZone) leftZone.color = showUi ? Qt.rgba(1, 0.84, 0, 0.06) : "transparent"
-        if (rightZone) rightZone.color = showUi ? Qt.rgba(0.31, 0.76, 0.97, 0.06) : "transparent"
+        if (leftZone) leftZone.zoneColor = showUi ? Qt.rgba(1, 0.84, 0, 0.06) : "transparent"
+        if (rightZone) rightZone.zoneColor = showUi ? Qt.rgba(0.31, 0.76, 0.97, 0.06) : "transparent"
     }
 
     Component {
         id: zoneComp
         Rectangle {
             id: zoneRect
+            color: "transparent"
 
-            property alias color: bg.color
+            property alias zoneColor: bg.color
             property alias bg: bg
 
             Rectangle {
