@@ -11,13 +11,21 @@ PluginComponent {
 
     property var popoutService: null
 
+    // ── Settings ──────────────────────────────────────────────────────
     readonly property bool scrollEnabled: pluginData.barScrollEnabled ?? true
     readonly property bool showUi: pluginData.showZoneUi ?? true
+    readonly property bool autoAlign: pluginData.autoAlign ?? true
     readonly property int sensitivity: pluginData.scrollSensitivity ?? 5
     readonly property int zoneWidth: pluginData.leftZoneWidth ?? 200
+    readonly property int zoneHeight: pluginData.zoneHeight || 0   // 0 = auto from bar
     readonly property int safeSensitivity: Math.max(1, Math.min(50, sensitivity))
-    readonly property color brightColor: Theme.tertiary
-    readonly property color volumeColor: Theme.primary
+
+    // ── Bar dimensions (injected by DMS) ─────────────────────────────
+    readonly property int barH: barThickness || 48
+
+    // ── Computed zone dimensions ─────────────────────────────────────
+    readonly property int effectiveZoneHeight: autoAlign ? barH : (zoneHeight > 0 ? zoneHeight : barH)
+    readonly property int effectiveZoneWidth: zoneWidth
 
     // ── Device detection ─────────────────────────────────────────────
     property var screenDevices: ({})
@@ -78,40 +86,55 @@ PluginComponent {
     // ── Scroll zone overlays on the bar window ───────────────────────
     property var leftZone: null
     property var rightZone: null
-    property var zoneUiLeft: null
-    property var zoneUiRight: null
+    property int zoneRetries: 0
 
-    function ensureZones(): void {
+    function tryCreateZones(): void {
         if (leftZone !== null) return
-        if (!blurBarWindow || !blurBarWindow.contentItem) return
+        if (!blurBarWindow || !blurBarWindow.contentItem) {
+            if (zoneRetries < 20) {
+                zoneRetries++
+                zoneRetryTimer.start()
+            }
+            return
+        }
+        zoneRetries = 0
         const parent = blurBarWindow.contentItem
 
-        // Left zone — brightness
         const lz = zoneComp.createObject(parent, {
             "anchors.left": parent.left,
             "anchors.top": parent.top,
-            "anchors.bottom": parent.bottom,
             "z": 999,
             "zoneColor": showUi ? Qt.rgba(1, 0.84, 0, 0.06) : "transparent"
         })
         leftZone = lz
 
-        // Right zone — volume
         const rz = zoneComp.createObject(parent, {
             "anchors.right": parent.right,
             "anchors.top": parent.top,
-            "anchors.bottom": parent.bottom,
             "z": 999,
             "zoneColor": showUi ? Qt.rgba(0.31, 0.76, 0.97, 0.06) : "transparent"
         })
         rightZone = rz
 
-        updateZoneWidths()
+        applyZoneDimensions()
     }
 
-    function updateZoneWidths(): void {
-        if (leftZone) leftZone.width = Qt.binding(() => zoneWidth)
-        if (rightZone) rightZone.width = Qt.binding(() => zoneWidth)
+    Timer {
+        id: zoneRetryTimer
+        interval: 500
+        repeat: false
+        onTriggered: tryCreateZones()
+    }
+
+    function applyZoneDimensions(): void {
+        if (leftZone) {
+            leftZone.width = Qt.binding(() => effectiveZoneWidth)
+            leftZone.height = Qt.binding(() => effectiveZoneHeight)
+        }
+        if (rightZone) {
+            rightZone.width = Qt.binding(() => effectiveZoneWidth)
+            rightZone.height = Qt.binding(() => effectiveZoneHeight)
+        }
     }
 
     function destroyZones(): void {
@@ -121,12 +144,17 @@ PluginComponent {
 
     Component.onCompleted: {
         detectDevices()
-        Qt.callLater(ensureZones)
+        Qt.callLater(tryCreateZones)
     }
 
     Component.onDestruction: destroyZones()
 
-    onZoneWidthChanged: updateZoneWidths()
+    // React to settings changes
+    onZoneWidthChanged: applyZoneDimensions()
+    onZoneHeightChanged: applyZoneDimensions()
+    onAutoAlignChanged: applyZoneDimensions()
+    onBarHChanged: { if (autoAlign) applyZoneDimensions() }
+
     onShowUiChanged: {
         if (leftZone) leftZone.zoneColor = showUi ? Qt.rgba(1, 0.84, 0, 0.06) : "transparent"
         if (rightZone) rightZone.zoneColor = showUi ? Qt.rgba(0.31, 0.76, 0.97, 0.06) : "transparent"
@@ -176,22 +204,22 @@ PluginComponent {
         }
     }
 
-    // ── Bar pill — minimal, just an indicator that the plugin is active ──
+    // ── Bar pill — invisible, just a hook for the plugin lifecycle ──
     horizontalBarPill: Component {
-        StyledText {
+        Rectangle {
             height: parent.widgetThickness
-            width: 0  // invisible pill — scroll zones are on the bar window
+            width: 1
+            color: "transparent"
             visible: false
-            text: ""
         }
     }
 
     verticalBarPill: Component {
-        StyledText {
+        Rectangle {
             width: parent.widgetThickness
-            height: 0
+            height: 1
+            color: "transparent"
             visible: false
-            text: ""
         }
     }
 }

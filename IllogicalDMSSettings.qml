@@ -17,7 +17,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "Brings illogical-impulse features to DankMaterialShell."
+        text: "Scroll bar edges for brightness (left) and volume (right). One widget creates both zones on the bar."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
@@ -69,21 +69,27 @@ PluginSettings {
         color: Theme.surfaceText
     }
 
-    SelectionSetting {
-        settingKey: "zoneSide"
-        label: "Zone Side"
-        description: "Left = brightness, Right = volume. Add two widgets: one in left section, one in right."
-        options: [
-            { label: "Brightness (Left)", value: "left" },
-            { label: "Volume (Right)", value: "right" }
-        ]
-        defaultValue: "left"
+    ToggleSetting {
+        settingKey: "autoAlign"
+        label: "Auto-align with Bar"
+        description: "Zones automatically match bar height. When off, use the height slider below."
+        defaultValue: true
+    }
+
+    SliderSetting {
+        settingKey: "zoneHeight"
+        label: "Zone Height"
+        description: "Height of the scroll zones. 0 = auto-detect from bar. Only used when auto-align is off."
+        defaultValue: 0
+        minimum: 0
+        maximum: 800
+        unit: "px"
     }
 
     SliderSetting {
         settingKey: "leftZoneWidth"
         label: "Zone Width"
-        description: "Width of the scroll zone on the bar edge."
+        description: "Width of each scroll zone from the bar edge."
         defaultValue: 200
         minimum: 40
         maximum: 600
@@ -102,9 +108,20 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "Add two widgets in Bar Settings. Set one to Brightness in the left section, one to Volume in the right section. Place them as the first widget in their section so the scroll zone sits at the bar edge."
+        text: "Add one Illogical DMS widget to your bar. Both left (brightness) and right (volume) zones are created automatically on the bar window edges. No Desktop Widgets setup needed."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
+    }
+
+    StyledRect { width: parent.width; height: 1; color: Theme.outlineVariant }
+
+    StyledText {
+        width: parent.width
+        text: "TODO: Multi-bar support — currently targets the bar the widget is placed on. Multiple bars with separate scroll zones not yet supported."
+        font.pixelSize: Theme.fontSizeSmall
+        color: Theme.surfaceVariantText
+        wrapMode: Text.WordWrap
+        opacity: 0.6
     }
 }
