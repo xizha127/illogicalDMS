@@ -6,27 +6,24 @@ import qs.Common
 import qs.Widgets
 import qs.Modules.Plugins
 
-DesktopPluginComponent {
+PluginComponent {
     id: root
 
+    property var popoutService: null
+
+    // ── Settings ──────────────────────────────────────────────────────
     readonly property bool scrollEnabled: pluginData.barScrollEnabled ?? true
-    readonly property bool alwaysOnTop: pluginData.alwaysOnTop ?? true
     readonly property bool showUi: pluginData.showZoneUi ?? false
     readonly property int sensitivity: pluginData.scrollSensitivity ?? 5
-    readonly property int brightnessZoneSize: pluginData.leftZoneWidth ?? 200
-    readonly property int volumeZoneSize: pluginData.rightZoneWidth ?? 200
+    readonly property int zoneWidth: pluginData.leftZoneWidth ?? 200
+    readonly property string zoneSide: pluginData.zoneSide ?? "left"
 
-    readonly property bool horizontalMode: width >= height
     readonly property int safeSensitivity: Math.max(1, Math.min(50, sensitivity))
-    readonly property color brightnessColor: Theme.tertiary
-    readonly property color volumeColor: Theme.primary
+    readonly property bool isLeft: zoneSide === "left"
+    readonly property color zoneColor: isLeft ? Theme.tertiary : Theme.primary
+    readonly property string zoneIcon: isLeft ? "brightness" : "volume"
 
-    minWidth: 40
-    minHeight: 32
-    widgetWidth: 800
-    widgetHeight: 48
-
-    // ── Auto-detect screen → brightness device mapping ───────────────
+    // ── Screen → brightness device mapping ─────────────────────────
     property var screenDevices: ({})
     property bool devicesReady: false
 
@@ -34,8 +31,6 @@ DesktopPluginComponent {
         if (devicesReady) return
         const screens = Quickshell.screens || []
         if (screens.length === 0) return
-
-        // Run "dms ipc brightness list" to get available devices
         const proc = detectProc
         proc.command = ["sh", "-c",
             "dms ipc brightness list 2>/dev/null | grep -E '^(backlight|ddc):' | head -20"]
@@ -56,23 +51,18 @@ DesktopPluginComponent {
 
                 const screens = Quickshell.screens || []
                 const map = {}
-
-                // Built-in display (usually first screen) → first backlight device
                 const backlights = devices.filter(d => d.startsWith("backlight:"))
                 const ddcs = devices.filter(d => d.startsWith("ddc:"))
 
-                // Laptop: built-in screen gets backlight, externals get DDC
-                // Desktop: all screens get DDC
                 for (let i = 0; i < screens.length; i++) {
                     const name = screens[i].name || ""
-                    if (backlights.length > 0 && i === 0) {
+                    if (backlights.length > 0 && i === 0)
                         map[name] = backlights[0]
-                    } else if (ddcs.length > 0) {
+                    else if (ddcs.length > 0) {
                         const ddcIdx = Math.min(i - (backlights.length > 0 ? 1 : 0), ddcs.length - 1)
                         map[name] = ddcs[Math.max(0, ddcIdx)]
                     }
                 }
-
                 screenDevices = map
                 devicesReady = true
             }
@@ -87,12 +77,11 @@ DesktopPluginComponent {
             const name = Hyprland.focusedMonitor?.name || ""
             if (name && screenDevices[name]) return screenDevices[name]
         } catch (e) {}
-        // Fallback: use first known device
         const vals = Object.values(screenDevices)
         return vals.length > 0 ? vals[0] : ""
     }
 
-    // ── IPC helper ─────────────────────────────────────────────────
+    // ── IPC ──────────────────────────────────────────────────────────
     function runIpc(target: string, fn: string, args: var): void {
         const cmd = ["dms", "ipc", target, fn]
         for (let i = 0; i < args.length; i++)
@@ -100,98 +89,131 @@ DesktopPluginComponent {
         Quickshell.execDetached(cmd)
     }
 
-    function handleBrightnessWheel(event: var): void {
-        if (!scrollEnabled || event.angleDelta.y === 0)
-            return
+    function doBrightness(delta: int): void {
+        if (!scrollEnabled || delta === 0) return
         const device = getFocusedDevice()
         if (!device) return
-        const action = event.angleDelta.y > 0 ? "increment" : "decrement"
-        runIpc("brightness", action, [safeSensitivity, device])
-        event.accepted = true
+        runIpc("brightness", delta > 0 ? "increment" : "decrement", [safeSensitivity, device])
     }
 
-    function handleVolumeWheel(event: var): void {
-        if (!scrollEnabled || event.angleDelta.y === 0)
-            return
-        runIpc("audio", event.angleDelta.y > 0 ? "increment" : "decrement", [safeSensitivity])
-        event.accepted = true
+    function doVolume(delta: int): void {
+        if (!scrollEnabled || delta === 0) return
+        runIpc("audio", delta > 0 ? "increment" : "decrement", [safeSensitivity])
     }
 
-    // ── Visual ─────────────────────────────────────────────────────
-    Rectangle {
-        anchors.fill: parent
-        radius: Theme.cornerRadius
-        color: "transparent"
-        border.width: showUi ? 1 : 0
-        border.color: showUi ? Theme.withAlpha(Theme.primary, 0.12) : "transparent"
-    }
+    // ── Horizontal bar pill ──────────────────────────────────────────
+    horizontalBarPill: Component {
+        Row {
+            height: parent.widgetThickness
+            spacing: 0
 
-    MouseArea {
-        id: brightnessZone
-        hoverEnabled: true
-        acceptedButtons: Qt.NoButton
-        anchors.left: parent.left
-        anchors.top: parent.top
-        width: root.horizontalMode ? Math.min(root.brightnessZoneSize, parent.width) : parent.width
-        height: root.horizontalMode ? parent.height : Math.min(root.brightnessZoneSize, parent.height)
-        onWheel: event => root.handleBrightnessWheel(event)
+            // Visual indicator at the bar edge
+            StyledRect {
+                height: parent.height
+                width: 26
+                radius: isLeft ? Theme.cornerRadius : 0
+                color: showUi ? Theme.withAlpha(zoneColor, 0.15) : "transparent"
 
-        Rectangle {
-            anchors.fill: parent
-            radius: Theme.cornerRadius
-            color: root.showUi ? Theme.withAlpha(root.brightnessColor, brightnessZone.containsMouse ? 0.14 : 0.06) : "transparent"
-            border.width: root.showUi ? 1 : 0
-            border.color: root.showUi ? Theme.withAlpha(root.brightnessColor, brightnessZone.containsMouse ? 0.45 : 0.18) : "transparent"
-            Behavior on color { ColorAnimation { duration: 120 } }
-            Behavior on border.color { ColorAnimation { duration: 120 } }
-        }
+                StyledText {
+                    anchors.centerIn: parent
+                    text: isLeft ? "☀" : "🔊"
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: showUi ? zoneColor : "transparent"
+                    opacity: showUi ? 0.7 : 0
+                }
+            }
 
-        StyledText {
-            visible: root.showUi && brightnessZone.containsMouse
-            anchors.centerIn: parent
-            text: "brightness"
-            font.pixelSize: Theme.fontSizeSmall
-            font.weight: Font.Medium
-            color: root.brightnessColor
-        }
-    }
+            // Scroll zone — fills remaining width
+            StyledRect {
+                height: parent.height
+                width: Math.max(0, zoneWidth - 26)
+                color: showUi ? (scrollHoverH.containsMouse
+                    ? Theme.withAlpha(zoneColor, 0.10)
+                    : Theme.withAlpha(zoneColor, 0.03)) : "transparent"
+                radius: isLeft ? 0 : Theme.cornerRadius
 
-    MouseArea {
-        id: volumeZone
-        hoverEnabled: true
-        acceptedButtons: Qt.NoButton
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        width: root.horizontalMode ? Math.min(root.volumeZoneSize, parent.width) : parent.width
-        height: root.horizontalMode ? parent.height : Math.min(root.volumeZoneSize, parent.height)
-        onWheel: event => root.handleVolumeWheel(event)
+                Behavior on color { ColorAnimation { duration: 150 } }
 
-        Rectangle {
-            anchors.fill: parent
-            radius: Theme.cornerRadius
-            color: root.showUi ? Theme.withAlpha(root.volumeColor, volumeZone.containsMouse ? 0.14 : 0.06) : "transparent"
-            border.width: root.showUi ? 1 : 0
-            border.color: root.showUi ? Theme.withAlpha(root.volumeColor, volumeZone.containsMouse ? 0.45 : 0.18) : "transparent"
-            Behavior on color { ColorAnimation { duration: 120 } }
-            Behavior on border.color { ColorAnimation { duration: 120 } }
-        }
+                StyledText {
+                    visible: showUi && scrollHoverH.containsMouse
+                    anchors.centerIn: parent
+                    text: zoneIcon
+                    font.pixelSize: Theme.fontSizeSmall
+                    font.weight: Font.Medium
+                    color: zoneColor
+                    opacity: 0.8
+                }
 
-        StyledText {
-            visible: root.showUi && volumeZone.containsMouse
-            anchors.centerIn: parent
-            text: "volume"
-            font.pixelSize: Theme.fontSizeSmall
-            font.weight: Font.Medium
-            color: root.volumeColor
+                MouseArea {
+                    id: scrollHoverH
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.NoButton
+                    onWheel: event => {
+                        if (isLeft) doBrightness(event.angleDelta.y)
+                        else doVolume(event.angleDelta.y)
+                        event.accepted = true
+                    }
+                }
+            }
         }
     }
 
-    StyledText {
-        visible: root.showUi && !brightnessZone.containsMouse && !volumeZone.containsMouse
-        anchors.centerIn: parent
-        text: root.horizontalMode ? "bar scroll zones" : "bar\nscroll\nzones"
-        horizontalAlignment: Text.AlignHCenter
-        font.pixelSize: Theme.fontSizeSmall
-        color: Theme.withAlpha(Theme.surfaceText, 0.5)
+    // ── Vertical bar pill ────────────────────────────────────────────
+    verticalBarPill: Component {
+        Column {
+            width: parent.widgetThickness
+            spacing: 0
+
+            StyledRect {
+                width: parent.width
+                height: 26
+                radius: isLeft ? Theme.cornerRadius : 0
+                color: showUi ? Theme.withAlpha(zoneColor, 0.15) : "transparent"
+
+                StyledText {
+                    anchors.centerIn: parent
+                    text: isLeft ? "☀" : "🔊"
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: showUi ? zoneColor : "transparent"
+                    opacity: showUi ? 0.7 : 0
+                    rotation: 90
+                }
+            }
+
+            StyledRect {
+                width: parent.width
+                height: Math.max(0, zoneWidth - 26)
+                color: showUi ? (scrollHoverV.containsMouse
+                    ? Theme.withAlpha(zoneColor, 0.10)
+                    : Theme.withAlpha(zoneColor, 0.03)) : "transparent"
+                radius: isLeft ? 0 : Theme.cornerRadius
+
+                Behavior on color { ColorAnimation { duration: 150 } }
+
+                StyledText {
+                    visible: showUi && scrollHoverV.containsMouse
+                    anchors.centerIn: parent
+                    text: zoneIcon
+                    font.pixelSize: Theme.fontSizeSmall
+                    font.weight: Font.Medium
+                    color: zoneColor
+                    opacity: 0.8
+                    rotation: 90
+                }
+
+                MouseArea {
+                    id: scrollHoverV
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.NoButton
+                    onWheel: event => {
+                        if (isLeft) doBrightness(event.angleDelta.y)
+                        else doVolume(event.angleDelta.y)
+                        event.accepted = true
+                    }
+                }
+            }
+        }
     }
 }

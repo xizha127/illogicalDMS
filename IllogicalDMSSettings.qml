@@ -25,35 +25,10 @@ PluginSettings {
 
     StyledRect { width: parent.width; height: 1; color: Theme.outlineVariant }
 
-    // ── Visibility ──
+    // ── Controls ──
     StyledText {
         width: parent.width
-        text: "Visibility"
-        font.pixelSize: Theme.fontSizeMedium
-        font.weight: Font.DemiBold
-        color: Theme.surfaceText
-    }
-
-    ToggleSetting {
-        settingKey: "alwaysOnTop"
-        label: "Always on Top"
-        description: "Must be ON. Also enable 'Show on Overlay' in the Desktop Widgets instance settings."
-        defaultValue: true
-    }
-
-    ToggleSetting {
-        settingKey: "showZoneUi"
-        label: "Show Zone UI"
-        description: "Colored borders and labels on the bar edges. Scroll works regardless of this setting."
-        defaultValue: false
-    }
-
-    StyledRect { width: parent.width; height: 1; color: Theme.outlineVariant }
-
-    // ── Behavior ──
-    StyledText {
-        width: parent.width
-        text: "Behavior"
+        text: "Controls"
         font.pixelSize: Theme.fontSizeMedium
         font.weight: Font.DemiBold
         color: Theme.surfaceText
@@ -62,7 +37,14 @@ PluginSettings {
     ToggleSetting {
         settingKey: "barScrollEnabled"
         label: "Bar Scroll Control"
-        description: "Scroll left edge for brightness, right edge for volume."
+        description: "Enable scroll-on-bar-edge for brightness (left) and volume (right)."
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        settingKey: "showZoneUi"
+        label: "Show Zone UI"
+        description: "Show colored indicator on the bar edge. Scroll works regardless."
         defaultValue: true
     }
 
@@ -78,29 +60,30 @@ PluginSettings {
 
     StyledRect { width: parent.width; height: 1; color: Theme.outlineVariant }
 
-    // ── Zone Size ──
+    // ── Zone ──
     StyledText {
         width: parent.width
-        text: "Zone Size"
+        text: "Zone"
         font.pixelSize: Theme.fontSizeMedium
         font.weight: Font.DemiBold
         color: Theme.surfaceText
     }
 
-    SliderSetting {
-        settingKey: "leftZoneWidth"
-        label: "Left Zone Width"
-        description: "Width of the brightness zone on the left bar edge."
-        defaultValue: 200
-        minimum: 40
-        maximum: 600
-        unit: "px"
+    SelectionSetting {
+        settingKey: "zoneSide"
+        label: "Zone Side"
+        description: "Left = brightness, Right = volume. Add two widgets: one in left section, one in right."
+        options: [
+            { label: "Brightness (Left)", value: "left" },
+            { label: "Volume (Right)", value: "right" }
+        ]
+        defaultValue: "left"
     }
 
     SliderSetting {
-        settingKey: "rightZoneWidth"
-        label: "Right Zone Width"
-        description: "Width of the volume zone on the right bar edge."
+        settingKey: "leftZoneWidth"
+        label: "Zone Width"
+        description: "Width of the scroll zone on the bar edge."
         defaultValue: 200
         minimum: 40
         maximum: 600
@@ -119,7 +102,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "Add widget in Desktop Widgets. Set Show on Overlay: ON, Click Through: OFF. Position at screen edges covering the bar."
+        text: "Add two widgets in Bar Settings. Set one to Brightness in the left section, one to Volume in the right section. Place them as the first widget in their section so the scroll zone sits at the bar edge."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
