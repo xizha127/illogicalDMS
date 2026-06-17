@@ -11,30 +11,23 @@ PluginComponent {
 
     property var popoutService: null
 
-    // ── Settings ──────────────────────────────────────────────────────
     readonly property bool scrollEnabled: pluginData.barScrollEnabled ?? true
-    readonly property bool showUi: pluginData.showZoneUi ?? false
+    readonly property bool showUi: pluginData.showZoneUi ?? true
     readonly property int sensitivity: pluginData.scrollSensitivity ?? 5
     readonly property int zoneWidth: pluginData.leftZoneWidth ?? 200
-    readonly property string zoneSide: pluginData.zoneSide ?? "left"
-
     readonly property int safeSensitivity: Math.max(1, Math.min(50, sensitivity))
-    readonly property bool isLeft: zoneSide === "left"
-    readonly property color zoneColor: isLeft ? Theme.tertiary : Theme.primary
-    readonly property string zoneIcon: isLeft ? "brightness" : "volume"
+    readonly property color brightColor: Theme.tertiary
+    readonly property color volumeColor: Theme.primary
 
-    // ── Screen → brightness device mapping ─────────────────────────
+    // ── Device detection ─────────────────────────────────────────────
     property var screenDevices: ({})
     property bool devicesReady: false
 
     function detectDevices(): void {
         if (devicesReady) return
-        const screens = Quickshell.screens || []
-        if (screens.length === 0) return
-        const proc = detectProc
-        proc.command = ["sh", "-c",
+        detectProc.command = ["sh", "-c",
             "dms ipc brightness list 2>/dev/null | grep -E '^(backlight|ddc):' | head -20"]
-        proc.running = true
+        detectProc.running = true
     }
 
     Process {
@@ -48,19 +41,16 @@ PluginComponent {
                     const m = lines[i].match(/^(\S+)/)
                     if (m) devices.push(m[1])
                 }
-
                 const screens = Quickshell.screens || []
                 const map = {}
-                const backlights = devices.filter(d => d.startsWith("backlight:"))
-                const ddcs = devices.filter(d => d.startsWith("ddc:"))
-
+                const bl = devices.filter(d => d.startsWith("backlight:"))
+                const ddc = devices.filter(d => d.startsWith("ddc:"))
                 for (let i = 0; i < screens.length; i++) {
                     const name = screens[i].name || ""
-                    if (backlights.length > 0 && i === 0)
-                        map[name] = backlights[0]
-                    else if (ddcs.length > 0) {
-                        const ddcIdx = Math.min(i - (backlights.length > 0 ? 1 : 0), ddcs.length - 1)
-                        map[name] = ddcs[Math.max(0, ddcIdx)]
+                    if (bl.length > 0 && i === 0) map[name] = bl[0]
+                    else if (ddc.length > 0) {
+                        const idx = Math.min(Math.max(0, i - (bl.length > 0 ? 1 : 0)), ddc.length - 1)
+                        map[name] = ddc[idx]
                     }
                 }
                 screenDevices = map
@@ -68,8 +58,6 @@ PluginComponent {
             }
         }
     }
-
-    Component.onCompleted: detectDevices()
 
     function getFocusedDevice(): string {
         if (!devicesReady) detectDevices()
@@ -81,77 +69,105 @@ PluginComponent {
         return vals.length > 0 ? vals[0] : ""
     }
 
-    // ── IPC ──────────────────────────────────────────────────────────
     function runIpc(target: string, fn: string, args: var): void {
         const cmd = ["dms", "ipc", target, fn]
-        for (let i = 0; i < args.length; i++)
-            cmd.push(String(args[i]))
+        for (let i = 0; i < args.length; i++) cmd.push(String(args[i]))
         Quickshell.execDetached(cmd)
     }
 
-    function doBrightness(delta: int): void {
-        if (!scrollEnabled || delta === 0) return
-        const device = getFocusedDevice()
-        if (!device) return
-        runIpc("brightness", delta > 0 ? "increment" : "decrement", [safeSensitivity, device])
+    // ── Scroll zone overlays on the bar window ───────────────────────
+    property var leftZone: null
+    property var rightZone: null
+    property var zoneUiLeft: null
+    property var zoneUiRight: null
+
+    function ensureZones(): void {
+        if (leftZone !== null) return
+        if (!blurBarWindow || !blurBarWindow.contentItem) return
+        const parent = blurBarWindow.contentItem
+
+        // Left zone — brightness
+        const lz = zoneComp.createObject(parent, {
+            "anchors.left": parent.left,
+            "anchors.top": parent.top,
+            "anchors.bottom": parent.bottom,
+            "z": 999,
+            "color": showUi ? Qt.rgba(1, 0.84, 0, 0.06) : "transparent"
+        })
+        leftZone = lz
+
+        // Right zone — volume
+        const rz = zoneComp.createObject(parent, {
+            "anchors.right": parent.right,
+            "anchors.top": parent.top,
+            "anchors.bottom": parent.bottom,
+            "z": 999,
+            "color": showUi ? Qt.rgba(0.31, 0.76, 0.97, 0.06) : "transparent"
+        })
+        rightZone = rz
+
+        updateZoneWidths()
     }
 
-    function doVolume(delta: int): void {
-        if (!scrollEnabled || delta === 0) return
-        runIpc("audio", delta > 0 ? "increment" : "decrement", [safeSensitivity])
+    function updateZoneWidths(): void {
+        if (leftZone) leftZone.width = Qt.binding(() => zoneWidth)
+        if (rightZone) rightZone.width = Qt.binding(() => zoneWidth)
     }
 
-    // ── Horizontal bar pill ──────────────────────────────────────────
-    horizontalBarPill: Component {
-        Row {
-            height: parent.widgetThickness
-            spacing: 0
+    function destroyZones(): void {
+        if (leftZone) { leftZone.destroy(); leftZone = null }
+        if (rightZone) { rightZone.destroy(); rightZone = null }
+    }
 
-            // Visual indicator at the bar edge
-            StyledRect {
-                height: parent.height
-                width: 26
-                radius: isLeft ? Theme.cornerRadius : 0
-                color: showUi ? Theme.withAlpha(zoneColor, 0.15) : "transparent"
+    Component.onCompleted: {
+        detectDevices()
+        Qt.callLater(ensureZones)
+    }
+
+    Component.onDestruction: destroyZones()
+
+    onZoneWidthChanged: updateZoneWidths()
+    onShowUiChanged: {
+        if (leftZone) leftZone.color = showUi ? Qt.rgba(1, 0.84, 0, 0.06) : "transparent"
+        if (rightZone) rightZone.color = showUi ? Qt.rgba(0.31, 0.76, 0.97, 0.06) : "transparent"
+    }
+
+    Component {
+        id: zoneComp
+        Rectangle {
+            id: zoneRect
+
+            property alias color: bg.color
+            property alias bg: bg
+
+            Rectangle {
+                id: bg
+                anchors.fill: parent
+                radius: Theme.cornerRadius
 
                 StyledText {
                     anchors.centerIn: parent
-                    text: isLeft ? "☀" : "🔊"
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: showUi ? zoneColor : "transparent"
-                    opacity: showUi ? 0.7 : 0
-                }
-            }
-
-            // Scroll zone — fills remaining width
-            StyledRect {
-                height: parent.height
-                width: Math.max(0, zoneWidth - 26)
-                color: showUi ? (scrollHoverH.containsMouse
-                    ? Theme.withAlpha(zoneColor, 0.10)
-                    : Theme.withAlpha(zoneColor, 0.03)) : "transparent"
-                radius: isLeft ? 0 : Theme.cornerRadius
-
-                Behavior on color { ColorAnimation { duration: 150 } }
-
-                StyledText {
-                    visible: showUi && scrollHoverH.containsMouse
-                    anchors.centerIn: parent
-                    text: zoneIcon
-                    font.pixelSize: Theme.fontSizeSmall
-                    font.weight: Font.Medium
-                    color: zoneColor
-                    opacity: 0.8
+                    text: zoneRect === leftZone ? "☀" : "🔊"
+                    font.pixelSize: Theme.fontSizeMedium
+                    color: Theme.withAlpha(zoneRect === leftZone ? "#FFD700" : "#4FC3F7", 0.6)
+                    visible: showUi && zoneMouse.containsMouse
                 }
 
                 MouseArea {
-                    id: scrollHoverH
+                    id: zoneMouse
                     anchors.fill: parent
                     hoverEnabled: true
                     acceptedButtons: Qt.NoButton
                     onWheel: event => {
-                        if (isLeft) doBrightness(event.angleDelta.y)
-                        else doVolume(event.angleDelta.y)
+                        if (!scrollEnabled || event.angleDelta.y === 0) return
+                        const delta = event.angleDelta.y
+                        if (zoneRect === leftZone) {
+                            const device = getFocusedDevice()
+                            if (!device) return
+                            runIpc("brightness", delta > 0 ? "increment" : "decrement", [safeSensitivity, device])
+                        } else {
+                            runIpc("audio", delta > 0 ? "increment" : "decrement", [safeSensitivity])
+                        }
                         event.accepted = true
                     }
                 }
@@ -159,61 +175,22 @@ PluginComponent {
         }
     }
 
-    // ── Vertical bar pill ────────────────────────────────────────────
+    // ── Bar pill — minimal, just an indicator that the plugin is active ──
+    horizontalBarPill: Component {
+        StyledText {
+            height: parent.widgetThickness
+            width: 0  // invisible pill — scroll zones are on the bar window
+            visible: false
+            text: ""
+        }
+    }
+
     verticalBarPill: Component {
-        Column {
+        StyledText {
             width: parent.widgetThickness
-            spacing: 0
-
-            StyledRect {
-                width: parent.width
-                height: 26
-                radius: isLeft ? Theme.cornerRadius : 0
-                color: showUi ? Theme.withAlpha(zoneColor, 0.15) : "transparent"
-
-                StyledText {
-                    anchors.centerIn: parent
-                    text: isLeft ? "☀" : "🔊"
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: showUi ? zoneColor : "transparent"
-                    opacity: showUi ? 0.7 : 0
-                    rotation: 90
-                }
-            }
-
-            StyledRect {
-                width: parent.width
-                height: Math.max(0, zoneWidth - 26)
-                color: showUi ? (scrollHoverV.containsMouse
-                    ? Theme.withAlpha(zoneColor, 0.10)
-                    : Theme.withAlpha(zoneColor, 0.03)) : "transparent"
-                radius: isLeft ? 0 : Theme.cornerRadius
-
-                Behavior on color { ColorAnimation { duration: 150 } }
-
-                StyledText {
-                    visible: showUi && scrollHoverV.containsMouse
-                    anchors.centerIn: parent
-                    text: zoneIcon
-                    font.pixelSize: Theme.fontSizeSmall
-                    font.weight: Font.Medium
-                    color: zoneColor
-                    opacity: 0.8
-                    rotation: 90
-                }
-
-                MouseArea {
-                    id: scrollHoverV
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    acceptedButtons: Qt.NoButton
-                    onWheel: event => {
-                        if (isLeft) doBrightness(event.angleDelta.y)
-                        else doVolume(event.angleDelta.y)
-                        event.accepted = true
-                    }
-                }
-            }
+            height: 0
+            visible: false
+            text: ""
         }
     }
 }
